@@ -1,194 +1,140 @@
-### `README.md`
+# Docker to EKS: A Production Path for Developers
 
-### Docker to EKS Production Workshop
+A hands-on workshop that takes a single application from a Dockerfile on your laptop to a public HTTPS endpoint served by Amazon EKS, redeployed automatically on every commit.
 
-> Build, Secure, and Deploy a Production-Ready Application on Amazon EKS with Automated CI/CD
+This is not a tour of AWS services. It is one application, one journey, thirteen steps.
 
-### Workshop Goal
+---
 
-By the end of this workshop, you will deploy a Flask Product Catalog API to Amazon EKS, expose it over HTTPS using an AWS Load Balancer, and automate the entire deployment using GitHub Actions, Amazon ECR, and Trivy.
+## The premise
 
-One application. One Dockerfile. One EKS cluster. One CI/CD pipeline.
+Most container training teaches Docker, then Kubernetes, then CI/CD as three unrelated subjects, and leaves the learner to figure out how they connect. This workshop inverts that. We start with an application that has a problem — it only runs on your machine — and every topic in the curriculum is introduced at the exact moment it becomes the obstacle in front of us.
 
-### Architecture Journey
+You will containerise the app, discover the image is bloated and running as root, harden it, run it on a single EC2 instance, kill that instance and watch the outage, and only then reach for Kubernetes. By the time EKS appears, you will already know why you want it.
 
-> (We'll add the architecture diagram later.)
+The same `catalog-api` application is used from module 1 to module 13. It is never replaced.
 
-### Prerequisites
+## What you will have built by the end
 
-* AWS Account
+A product catalog API running on Amazon EKS across multiple availability zones, behind an Application Load Balancer with TLS, pulling configuration from AWS Secrets Manager via IRSA, built from a hardened distroless image that fails its own pipeline if a critical CVE is introduced, and deployed by a GitHub Actions workflow that authenticates to AWS with OIDC rather than long-lived access keys.
 
-* GitHub Account
+## Who this is for
 
-* Docker Desktop (or Docker Engine on Linux)
+Developers who ship application code and need to own it through to production. You are expected to be comfortable with a terminal, Git, and at least one programming language. You are **not** expected to have prior Kubernetes, Terraform, or AWS networking experience.
 
-* AWS CLI
+Infrastructure topics in this workshop are deliberately scoped to what a developer needs to be effective and safe — not to what a platform engineer needs to design a landing zone.
 
-* `kubectl`
+## Curriculum
 
-* `eksctl`
+| # | Module | Focus | Duration |
+|---|--------|-------|----------|
+| 00 | Orientation | The application, the goal, the shape of the day | 10 min |
+| 01 | Docker images and containers | Dockerfile, layers, build cache, port mapping, ephemerality | 40 min |
+| 02 | Image hardening | Multistage builds, distroless, non-root, Trivy, ECR scan-on-push | 40 min |
+| 03 | EC2 hosting and load balancing | Single instance, ALB, and a deliberate outage | 20 min |
+| 04 | VPC and networking basics | Subnets, AZs, route tables, security groups — read-a-diagram depth | 20 min |
+| 05 | Launching the EKS cluster | Control plane vs. node groups, `eksctl`, kubeconfig, IAM OIDC | 30 min |
+| 06 | Kubernetes Deployments | Pods, replicas, rolling updates, self-healing, rollback | 30 min |
+| 07 | Kubernetes Services | ClusterIP, NodePort, LoadBalancer — and how it maps to module 3 | 25 min |
+| 08 | Ingress and the AWS Load Balancer Controller | Host and path routing, TLS via ACM | 30 min |
+| 09 | Configuration and secrets | ConfigMaps, Kubernetes Secrets, Secrets Manager, IRSA | 25 min |
+| 10 | Introduction to GitHub Actions | Workflows, jobs, steps, runners, triggers | 20 min |
+| 11 | Building the pipeline | Build, scan, push to ECR via OIDC, deploy to EKS | 45 min |
+| 12 | Workflow efficiency and DevSecOps | Caching, path filters, concurrency, environments, reusable workflows | 25 min |
+| 13 | Wrap-up | Ship a bad commit, watch it fail. Ship a good one, watch it go live. | 15 min |
 
-* `git`
+Total: approximately 6 hours including breaks.
 
-### Workshop Modules
+## Repository structure
 
-|
-Module
+```
+.
+├── app/                              # The single application, used end to end
+│   ├── app.py
+│   ├── requirements.txt
+│   └── .dockerignore
+├── module-01-docker-fundamentals/
+├── module-02-image-hardening/
+├── module-03-ec2-load-balancing/
+├── module-04-vpc-networking/
+├── module-05-eks-cluster/
+├── module-06-deployments/
+├── module-07-services/
+├── module-08-ingress/
+├── module-09-config-and-secrets/
+├── module-10-github-actions-intro/
+├── module-11-cicd-pipeline/
+├── module-12-workflow-optimization/
+├── module-13-wrap-up/
+├── .github/workflows/                # The pipeline built in modules 11 and 12
+└── README.md
+```
 
-|
+Every module directory contains its own `README.md` with the concept briefing and the full lab. Each lab is self-contained: it creates every object it needs from scratch and removes them at the end. No lab assumes state left behind by a previous one, so you can drop into module 7 on a Tuesday evening without having run modules 1 through 6 that morning.
 
-Topic
+## Prerequisites
 
-|
-| --- | --- |
-|
+**Accounts**
 
-[00](https://./00-workshop-kickoff.md) 
+- An AWS account with administrative access. A personal or sandbox account is strongly preferred over a corporate one.
+- A GitHub account.
 
-|
+**Local tooling**
 
-Workshop Kickoff
+| Tool | Minimum version | Verify with |
+|------|-----------------|-------------|
+| Docker | 24.x | `docker version` |
+| AWS CLI | 2.x | `aws --version` |
+| eksctl | 0.190+ | `eksctl version` |
+| kubectl | 1.30+ | `kubectl version --client` |
+| Helm | 3.x | `helm version` |
+| Trivy | 0.50+ | `trivy --version` |
+| Git | any recent | `git --version` |
 
-|
-|
+**Before you arrive**
 
-[01](https://./01-docker-fundamentals.md) 
+Run `aws sts get-caller-identity` and confirm it returns your account ID. If it does not, fix your credentials before the session starts — we will not have time to debug IAM configuration live.
 
-|
+**A note on Apple Silicon:** if you are on an M-series Mac, images build for `arm64` by default and will not run on `amd64` EKS nodes. Either pass `--platform linux/amd64` on every build from module 1 onward, or run the entire workshop from a Linux EC2 instance. Decide this before module 1, not during module 6.
 
-Docker Fundamentals: Images and Containers
+## Cost
 
-|
-|
+This workshop provisions real, billable AWS infrastructure — an EKS control plane, managed node group, NAT gateway, and Application Load Balancer. Expect a cost in the low single-digit dollars per hour while the environment is running. Verify current pricing for your region before you begin.
 
-[02](https://./02-production-docker-security.md) 
+**Tear down everything when you are finished.** Module 13 includes a complete teardown procedure. The NAT gateway and the EKS control plane bill continuously whether or not you are using them, and a cluster forgotten over a weekend is an expensive lesson in a different subject than the one this workshop teaches.
 
-|
+## How to use this repository
 
-Production Docker Images and Security
+**During the live session:** clone the repo and follow the module README as the instructor works. Every command in the lab is copy-pasteable. Do not read ahead — several modules depend on you seeing a failure before you see the fix.
 
-|
-|
+**Self-paced afterwards:** the modules stand alone. Start at module 1 and work through in order for the full arc, or jump to a specific module if you need one technique in isolation.
 
-[03](https://./03-ec2-hosting-alb.md) 
+```bash
+git clone https://github.com/discover-devops/docker-to-eks-production-workshop.git
+cd docker-to-eks-production-workshop
+```
 
-|
+## Design principles
 
-Hosting Containers on EC2
+**One application, thirteen modules.** Nothing is introduced with a throwaway `nginx` example that gets discarded.
 
-|
-|
+**Every lab is self-contained.** Prerequisites are recreated, objects are cleaned up. State is never assumed.
 
-[04](https://./04-aws-networking-for-eks.md) 
+**Security is not a module.** Image hardening, non-root execution, vulnerability gates, OIDC federation, and secrets management appear where they naturally belong in the delivery path, not in an appendix nobody reaches.
 
-|
+**Show the failure first.** The case for Kubernetes is made by killing an EC2 instance, not by a slide comparing orchestrators.
 
-AWS Networking for EKS
+---
 
-|
-|
+## Author
 
-[05](https://./05-create-eks-cluster.md) 
+**Rahul Chaubey** — Solution Architect and AI & Cloud Transformation Leader.
 
-|
+Twenty years across AWS, Microsoft, and Oracle, designing and delivering cloud and container platforms for enterprise workloads. Rahul works at the intersection of cloud architecture, DevSecOps, and applied AI, and writes and teaches on infrastructure and platform engineering for practising developers.
 
-Creating an Amazon EKS Cluster
+- YouTube: [Discover DevOps](https://www.youtube.com/@discoverdevops)
+- GitHub: [@discover-devops](https://github.com/discover-devops)
 
-|
-|
+## License
 
-[06](https://./06-kubernetes-deployments.md) 
-
-|
-
-Kubernetes Deployments
-
-|
-|
-
-[07](https://./07-kubernetes-services.md) 
-
-|
-
-Kubernetes Services
-
-|
-|
-
-[08](https://./08-ingress-https.md) 
-
-|
-
-Ingress and HTTPS
-
-|
-|
-
-[09](https://./09-configmaps-secrets-irsa.md) 
-
-|
-
-Configuration and Secrets
-
-|
-|
-
-[10](https://./10-github-actions-fundamentals.md) 
-
-|
-
-GitHub Actions Fundamentals
-
-|
-|
-
-[11](https://./11-end-to-end-cicd.md) 
-
-|
-
-End-to-End CI/CD Pipeline
-
-|
-|
-
-[12](https://./12-cicd-optimization-devsecops.md) 
-
-|
-
-CI/CD Optimization and DevSecOps
-
-|
-|
-
-[13](https://./13-final-production-demo.md) 
-
-|
-
-Final Production Demo
-
-|
-
-### Final Outcome
-
-By the end of the workshop, you will have built:
-
-* A Dockerized Flask Product Catalog API
-
-* A production-ready Docker image
-
-* A private Amazon ECR repository
-
-* A highly available Amazon EKS cluster
-
-* Kubernetes Deployments and Services
-
-* AWS ALB-based Ingress with HTTPS
-
-* Secure configuration using IRSA and AWS Secrets Manager
-
-* A complete GitHub Actions CI/CD pipeline with Trivy security scanning
-
-### Repository Structure
-
-``` docker-to-eks-production-workshop/ ├── README.md ├── 00-workshop-kickoff.md ├── 01-docker-fundamentals.md ├── ... └── 13-final-production-demo.md ```
-
+MIT. Use it, fork it, teach from it. Attribution appreciated.

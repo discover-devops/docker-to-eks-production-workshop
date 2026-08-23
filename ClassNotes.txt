@@ -1,0 +1,8 @@
+Docker image and Docker containers
+Demo of implementing industry standard implementation (e.g. in image hardening and other security standards)
+Kubernetes deployment, services and ingress
+Introduction to GitHub Actions
+Secrets, Events, and Workflow Optimization (DevSecOps)
+Efficient Workflows and Security Practices (DevSecOps)
+EC2 Hosting & Load Balancing
+AWS VPC & Networking Basics

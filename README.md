@@ -132,7 +132,7 @@ cd docker-to-eks-production-workshop
 
 Twenty years across AWS, Microsoft, and Oracle, designing and delivering cloud and container platforms for enterprise workloads. Rahul works at the intersection of cloud architecture, DevSecOps, and applied AI, and writes and teaches on infrastructure and platform engineering for practising developers.
 
-- YouTube: [Discover DevOps](https://www.youtube.com/@BuildAutomateArchitect)
+- YouTube: [Discover DevOps](https://www.youtube.com/@BuildAutomateArchitectgit statu   )
 - GitHub: [@discover-devops](https://github.com/discover-devops)
 
 ## License

@@ -1,6 +1,6 @@
 # Module 00 — Workshop Kickoff
 
-**Duration:** 30 minutes
+
 **You will finish this module with:** a verified toolchain, a working AWS identity, and both workshop applications running on your own machine.
 
 ---

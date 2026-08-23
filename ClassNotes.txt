@@ -1,8 +1,81 @@
 Docker image and Docker containers
+
 Demo of implementing industry standard implementation (e.g. in image hardening and other security standards)
+
 Kubernetes deployment, services and ingress
+
 Introduction to GitHub Actions
+
 Secrets, Events, and Workflow Optimization (DevSecOps)
+
 Efficient Workflows and Security Practices (DevSecOps)
+
 EC2 Hosting & Load Balancing
+
 AWS VPC & Networking Basics
+
+
+What is your prfile
+What is your Docker and K8s exp
+
+====================
+
+JumpBoX $ export AWS_REGION=ap-south-1
+aws configure set region $AWS_REGION
+aws sts get-caller-identity
+{
+    "UserId": "AROAUL2OSST5A3P5MJGRX:i-0d9bc5350e88b6bee",
+    "Account": "XXXXXXXXXXXXXXX",
+    "Arn": "arn:aws:sts::XXXXXXXXXXXXXXX:assumed-role/AWS_ADMIN_ROLE/i-0d9bc5350e88b6bee"
+}
+JumpBoX $ mkdir -p ~/workshop-app/infra
+cd ~/workshop-app/infra
+JumpBoX $ cat > ~/workshop-app/infra/create-network.sh << 'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+
+REGION="${AWS_REGION:-ap-south-1}"
+AZ_A="${REGION}a"
+AZ_B="${REGION}b"
+NAME="workshop"
+
+echo ">>> Region: $REGION"
+
+# ---------- VPC ----------
+VPC_ID=$(aws ec2 create-vpc \
+  --cidr-block 10.0.0.0/16 \
+  --region "$REGION" \
+  --tag-specifications "ResourceType=vpc,Tags=[{Key=Name,Value=${NAME}-vpc}]" \
+  --query 'Vpc.VpcId' --output text)
+
+aws ec2 modify-vpc-attribute --vpc-id "$VPC_ID" --enable-dns-hostnames --region "$REGION"
+aws ec2 modify-vpc-attribute --vpc-id "$VPC_ID" --enable-dns-support   --region "$REGION"
+echo ">>> VPC: $VPC_ID"
+
+# ---------- Internet Gateway ----------
+IGW_ID=$(aws ec2 create-internet-gateway \
+  --region "$REGION" \
+  --tag-specifications "ResourceType=internet-gateway,Tags=[{Key=Name,Value=${NAME}-igw}]" \
+  --query 'InternetGateway.InternetGatewayId' --output text)
+
+aws ec2 attach-internet-gateway --vpc-id "$VPC_ID" --internet-gateway-id "$IGW_ID" --region "$REGION"
+echo ">>> IGW: $IGW_ID"
+
+# ---------- Subnets ----------
+create_subnet () {
+  local cidr=$1 az=$2 name=$3
+  aws ec2 create-subnet \
+    --vpc-id "$VPC_ID" --cidr-block "$cidr" --availability-zone "$az" \
+    --region "$REGION" \
+    --tag-specifications "ResourceType=subnet,Tags=[{Key=Name,Value=$name}]" \
+    --query 'Subnet.SubnetId' --output text
+}
+
+PUB_A=$(create_subnet 10.0.1.0/24  "$AZ_A" "${NAME}-public-1a")
+PUB_B=$(create_subnet 10.0.2.0/24  "$AZ_B" "${NAME}-public-1b")
+PRIV_A=$(create_subnet 10.0.11.0/24 "$AZ_A" "${NAME}-private-1a")
+PRIV_B=$(create_subnet 10.0.12.0/24 "$AZ_B" "${NAME}-private-1b")
+
+# Auto-assign public IPs in public subnets
+chmod +x ~/workshop-app/infra/create-network.shp-app/infra/network.env"$PRIV_B" --region "$REGION" >/dev/null
+JumpBoX $

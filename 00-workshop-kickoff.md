@@ -1,111 +1,140 @@
 # Module 00 — Workshop Kickoff
 
-**Duration:** 25 minutes
-**You will finish this module with:** a verified toolchain, a working AWS identity, and the workshop application running on your own machine.
+**Duration:** 30 minutes
+**You will finish this module with:** a verified toolchain, a working AWS identity, and both workshop applications running on your own machine.
 
 ---
 
 ## Context
 
-Think about what happens when India plays Pakistan in a World Cup match and everyone opens Hotstar at the same moment.
+Open Flipkart and search for a laptop.
 
-At 7:29 PM the platform is serving a few hundred thousand people. At 7:31 PM it is serving fifty million. Nobody at Hotstar is logging into a server, copying files, installing Python, and restarting a service. Nobody is on a call saying "it works on my laptop, I don't know why it's failing in production."
+What comes back looks like one page, but it is not one application. The product listing came from a catalog service. The price and stock came from an inventory service. "Deliver by Tuesday" came from a logistics service. Your order history came from an orders service. Recommendations came from somewhere else entirely.
 
-The traffic goes up, the platform grows to meet it, the traffic goes down, the platform shrinks. Then the match ends and the same thing happens in reverse.
+Dozens of separate applications, written by different teams, deployed independently, talking to each other over HTTP — and the whole thing has to survive Big Billion Days, when traffic goes up twenty times in a single evening and comes back down six hours later.
 
-That behaviour is not magic and it is not exclusive to companies with thousands of engineers. It comes from three ideas stacked on top of each other:
+That is the destination. This workshop is the road there.
 
-1. The application is packaged into an artifact that runs identically everywhere — a **container image**.
-2. Something decides where those containers run, restarts them when they die, and adds more when demand rises — **Kubernetes**.
-3. Getting new code from a developer's commit into that system is automatic and gated — a **CI/CD pipeline**.
+### How we are going to get there
 
-Every serious platform you use daily runs on some version of this. Zomato routing your order. PhonePe settling a UPI transaction. Netflix deciding which encode of a video to serve you. Flipkart during Big Billion Days. Different companies, different languages, same three ideas.
+We are not going to start with Kubernetes. We are going to start where the industry actually started, and move forward the same way it did — one problem at a time.
 
-By the end of this workshop, your application will work the same way.
+**First**, you will deploy a two-service application the traditional way: two EC2 instances, SSH in, install the runtime, copy the code, start the process, write a systemd unit. This is how production worked for most of the last two decades, and a great deal of it still works this way today.
 
-### The problem we are actually solving
+**Then** you will put an Application Load Balancer in front, with path-based routing sending `/catalog` traffic to one service and `/orders` to the other. At this point you will have a genuinely working, publicly reachable microservice deployment.
 
-Here is the situation this workshop exists to fix.
+**Then** we will break it. Not artificially — we will simply look honestly at what it costs to run. Deployments are manual. Servers drift apart from each other. Scaling means baking a new AMI and waiting minutes. An instance dies and nobody notices until a customer complains.
 
-You write code. It runs on your laptop. You hand it to someone else and it does not run on theirs, because they have a different Python version, or a missing library, or a different operating system. You eventually get it onto a server. That server dies at 2 AM and your application is offline until a human notices and fixes it. When traffic doubles, you have no answer except to buy a bigger server and take an outage while you migrate to it. And every deployment is a person following a checklist, which means every deployment is a person capable of skipping step four.
+**That pain is what Docker solves**, so Docker is where we go next. We will containerize the exact same two services, harden the images to production standards, scan them for vulnerabilities, and push them to a registry.
 
-We are going to remove all four of those problems, in order, with the same application.
+**Then we will break that too.** Docker on a single host fixes packaging, but it does not restart a crashed container, does not spread load across machines, and does not help one service find another.
+
+**That pain is what Kubernetes solves.** So we finish on EKS — the same two services, running as Deployments, exposed by Services, routed by an Ingress that lands us right back at an Application Load Balancer, except this time nobody configured it by hand.
+
+Every tool in this workshop is introduced as the answer to a problem you have already felt. Nothing appears because it is on a syllabus.
 
 ---
 
 ## Concept
 
-### One application, thirteen modules
-
-Most container training teaches you Docker on Monday, Kubernetes on Wednesday, and CI/CD on Friday, using three unrelated toy examples. You leave knowing three tools and not knowing how they connect.
-
-This workshop does the opposite. There is **one** application — a product catalog API — and it appears in every single module. We never throw it away and start again with a fresh `nginx` example.
-
-Each new topic is introduced at the exact moment it becomes the thing standing between our application and production. You will not learn Kubernetes because it is on the syllabus. You will learn it because in Module 03 we put our application on a single EC2 server, that server dies, and the application goes down — and at that moment you will want something better.
-
-### The journey
-
-| Where we are | What we add | What it fixes |
-|---|---|---|
-| App runs only on your laptop | **Docker image** | Runs identically anywhere |
-| Image is 1 GB and runs as root | **Hardening + scanning** | Small, safe, auditable |
-| One EC2 server | **Load balancer** | Traffic distribution |
-| Server dies, app is down | **Kubernetes / EKS** | Self-healing and scaling |
-| No public URL | **Service + Ingress + TLS** | Real HTTPS endpoint |
-| Config baked into the image | **ConfigMaps + Secrets Manager** | Config separated from code |
-| Deployment is manual | **GitHub Actions** | Automatic, gated, repeatable |
-
 ### The application
 
-`catalog-api` is a small product catalog service — the kind of service that sits behind the listings page of any e-commerce platform. Flipkart has one. Amazon has one. Yours will be considerably smaller.
+Two small services, deliberately shaped like the ones behind any e-commerce platform.
 
-It exposes two endpoints:
+**`catalog-api`** — owns product data.
 
-| Endpoint | Purpose |
+| Endpoint | Returns |
 |---|---|
-| `GET /health` | Liveness check. Kubernetes will use this in Module 06. |
-| `GET /products` | Returns the catalog, plus the hostname of whatever is serving the request. |
+| `GET /health` | Liveness check |
+| `GET /products` | All products, plus the hostname serving the request |
+| `GET /products/<id>` | A single product |
 
-That hostname field matters more than it looks. In Module 03 it will prove that a load balancer is distributing traffic across two servers. In Module 06 it will prove that Kubernetes is running multiple copies of your application. It is our evidence, not decoration.
+**`orders-api`** — owns orders, and calls `catalog-api` to enrich them.
 
-### Vocabulary you will hear today
+| Endpoint | Returns |
+|---|---|
+| `GET /health` | Liveness check |
+| `GET /orders` | Orders with product names resolved from `catalog-api` |
 
-Read these once now. They will make sense properly when you meet them in a lab.
+That second service matters more than it looks. Because `orders-api` has to *find* `catalog-api` over the network, every stage of this workshop has to answer the question "how does one service locate another?" — and the answer changes each time.
+
+| Stage | How `orders-api` finds `catalog-api` |
+|---|---|
+| EC2 | A hardcoded private IP address |
+| Docker | A container name on a Docker network |
+| Kubernetes | A Service DNS name that survives pods being replaced |
+
+That progression is the spine of the workshop.
+
+### The `served_by` field
+
+Both services return the hostname of whatever is handling the request. This is our evidence, not decoration:
+
+- In Module 03 it proves the load balancer is distributing traffic.
+- In Module 10 it proves Kubernetes is running multiple replicas.
+- In Module 12 it proves the Ingress is routing to the right service.
+
+Watch that field throughout.
+
+### The road map
+
+| Module | Topic |
+|---|---|
+| 00 | Workshop kickoff — environment and applications |
+| 01 | AWS networking recap — the ground everything sits on |
+| 02 | EC2 hosting — deploy both services by hand |
+| 03 | Load balancing — ALB, NLB, and path-based routing |
+| 04 | The limits of EC2 — why this does not scale |
+| 05 | Docker fundamentals — images, containers, architecture |
+| 06 | Containerizing the application |
+| 07 | Image hardening — multi-stage, non-root, Trivy, ECR |
+| 08 | The limits of Docker on a host |
+| 09 | Kubernetes concepts and launching EKS |
+| 10 | Deployments |
+| 11 | Services and service discovery |
+| 12 | Ingress and HTTPS |
+
+Modules 13 onward cover GitHub Actions, secrets, and DevSecOps in a later session.
+
+### Vocabulary
+
+Read once now. Each becomes concrete when you meet it.
 
 | Term | Working definition |
 |---|---|
-| **Image** | A packaged, read-only bundle of your app and everything it needs to run. |
-| **Container** | A running instance of an image. One image, many containers. |
-| **Registry (ECR)** | Where images are stored so other machines can pull them. |
-| **Pod** | The smallest unit Kubernetes runs. Usually one container. |
-| **Deployment** | Tells Kubernetes "keep N copies of this image running at all times." |
-| **Service** | A stable network address for a set of pods that keep being replaced. |
-| **Ingress** | HTTP routing from the internet into your Services. |
-| **EKS** | Amazon's managed Kubernetes. AWS runs the control plane, you run the workloads. |
-| **Pipeline** | Automation that builds, tests, scans, and deploys your code on every commit. |
+| **AMI** | A snapshot of a disk used to launch EC2 instances |
+| **Target group** | The set of servers a load balancer sends traffic to |
+| **Image** | A packaged, read-only bundle of an app and its dependencies |
+| **Container** | A running instance of an image |
+| **Registry (ECR)** | Where images are stored so other machines can pull them |
+| **Pod** | The smallest unit Kubernetes runs — usually one container |
+| **Deployment** | "Keep N copies of this image running at all times" |
+| **Service** | A stable network name for a changing set of pods |
+| **Ingress** | HTTP routing from the internet into Services |
+| **EKS** | Amazon's managed Kubernetes — AWS runs the control plane |
 
 ### The rules of this workshop
 
-**Every lab is self-contained.** Each one creates what it needs and cleans up after itself. If you get lost in Module 07, you can start Module 08 from a clean slate.
+**Every lab is self-contained.** Each lab creates what it needs from scratch and removes it at the end. If you fall behind in Module 06, you can still start Module 07 cleanly.
 
-**We show the failure before the fix.** Several modules deliberately break things. When something goes wrong on screen, it is usually on purpose. Do not read ahead — the surprise is the teaching.
+**We show the failure before the fix.** Several modules deliberately break things. When something fails on screen, it is usually on purpose.
 
-**Everything costs money after Module 05.** From the moment the EKS cluster exists, AWS is billing you by the hour, whether or not you are using it. Module 13 tears everything down. Do not skip it.
+**Everything costs money from Module 02 onward.** EC2 instances, NAT gateways, load balancers, and the EKS control plane all bill by the hour whether you are using them or not. Every lab ends with teardown. Do not skip it.
 
 ---
 
 ## Lab 00 — Environment Verification
 
-**Time:** 15 minutes
-**Goal:** confirm every tool is installed, confirm AWS recognises you, and run the application natively so you experience the problem Docker solves.
+**Time:** 20 minutes
+**Goal:** confirm your tools work, confirm AWS recognises you, and run both services locally so you know what "working" looks like before anything gets complicated.
 
 ### Step 1 — Verify your toolchain
 
-Run each command. You are looking for a version number, not an error.
+Each command should return a version, not an error.
 
 ```bash
-docker version --format '{{.Server.Version}}'
 aws --version
+docker version --format '{{.Server.Version}}'
 eksctl version
 kubectl version --client
 helm version --short
@@ -114,24 +143,27 @@ git --version
 python3 --version
 ```
 
-Expected minimums:
+Minimums:
 
 | Tool | Minimum |
 |---|---|
-| Docker | 24.x |
 | AWS CLI | 2.x |
+| Docker | 24.x |
 | eksctl | 0.190+ |
 | kubectl | 1.30+ |
 | Helm | 3.x |
 | Trivy | 0.50+ |
 | Python | 3.10+ |
 
-If `docker version` reports a client version but errors on the server, the Docker daemon is not running. Start Docker Desktop, or on Linux:
+If `docker version` returns a client version but errors on the server, the daemon is not running:
 
 ```bash
-sudo systemctl start docker
-sudo systemctl status docker --no-pager
+sudo systemctl start docker     # Linux
 ```
+
+On macOS or Windows, start Docker Desktop.
+
+Docker is not needed until Module 05, but fix it now rather than mid-session.
 
 ### Step 2 — Verify your AWS identity
 
@@ -139,65 +171,70 @@ sudo systemctl status docker --no-pager
 aws sts get-caller-identity
 ```
 
-You should get back your Account, UserId, and Arn. Note your account ID — you will need it in Module 02 when you push to ECR.
-
-Confirm your region is set:
+You should see your Account, UserId, and Arn. **Note your 12-digit account ID** — Module 07 needs it for ECR.
 
 ```bash
 aws configure get region
 ```
 
-If that returns nothing, set one now:
+If that returns nothing:
 
 ```bash
 aws configure set region ap-south-1
 ```
 
-Use whichever region your instructor is using. Mixing regions between modules causes failures that look like permissions problems and are not.
+Use whatever region your instructor is using. Mixing regions across modules produces failures that look like permission errors and are not.
 
-If `get-caller-identity` fails, stop here and fix your credentials. Every module from 02 onwards depends on it.
+If `get-caller-identity` fails, stop and fix your credentials. Everything from Module 02 depends on it.
 
-### Step 3 — Clone the workshop repository
+### Step 3 — Create a clean working directory
 
 ```bash
-cd ~
-git clone https://github.com/discover-devops/docker-to-eks-production-workshop.git
-cd docker-to-eks-production-workshop
-ls
+rm -rf ~/workshop-app
+mkdir -p ~/workshop-app/catalog-api ~/workshop-app/orders-api
+cd ~/workshop-app
 ```
 
-### Step 4 — Create the application
-
-We build the application by hand rather than just cloning it, because you should know exactly what is inside the thing you spend the next six hours deploying.
+### Step 4 — Create `catalog-api`
 
 ```bash
-mkdir -p ~/catalog-app && cd ~/catalog-app
-```
-
-```bash
-cat > app.py << 'EOF'
+cat > ~/workshop-app/catalog-api/app.py << 'EOF'
 from flask import Flask, jsonify
 import os, socket
 
 app = Flask(__name__)
 
-PRODUCTS = [
-    {"id": 1, "name": "Wireless Earbuds",    "price": 2499,  "stock": 120},
-    {"id": 2, "name": "Mechanical Keyboard", "price": 5999,  "stock": 34},
-    {"id": 3, "name": "27 inch Monitor",     "price": 18999, "stock": 12},
-]
+SERVICE_NAME = "catalog-api"
+VERSION = os.getenv("APP_VERSION", "1.0.0")
+
+PRODUCTS = {
+    1: {"id": 1, "name": "Wireless Earbuds",    "price": 2499,  "stock": 120},
+    2: {"id": 2, "name": "Mechanical Keyboard", "price": 5999,  "stock": 34},
+    3: {"id": 3, "name": "27 inch Monitor",     "price": 18999, "stock": 12},
+    4: {"id": 4, "name": "USB-C Hub",           "price": 3499,  "stock": 87},
+}
+
+def meta():
+    return {
+        "service": SERVICE_NAME,
+        "version": VERSION,
+        "served_by": socket.gethostname(),
+    }
 
 @app.route("/health")
 def health():
-    return jsonify(status="ok"), 200
+    return jsonify(status="ok", **meta()), 200
 
 @app.route("/products")
 def products():
-    return jsonify(
-        served_by=socket.gethostname(),
-        version=os.getenv("APP_VERSION", "1.0.0"),
-        products=PRODUCTS,
-    )
+    return jsonify(products=list(PRODUCTS.values()), **meta())
+
+@app.route("/products/<int:pid>")
+def product(pid):
+    p = PRODUCTS.get(pid)
+    if not p:
+        return jsonify(error="not found", **meta()), 404
+    return jsonify(product=p, **meta())
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=8080)
@@ -205,75 +242,172 @@ EOF
 ```
 
 ```bash
-cat > requirements.txt << 'EOF'
+cat > ~/workshop-app/catalog-api/requirements.txt << 'EOF'
 flask==3.0.3
 gunicorn==22.0.0
 EOF
 ```
 
-### Step 5 — Run it natively
+### Step 5 — Create `orders-api`
 
-This is the last time in this workshop you will run the application directly on your operating system.
+Note the `CATALOG_URL` environment variable. That one line is how this service finds the other, and it is the value that changes at every stage of the workshop.
 
 ```bash
-python3 -m venv venv
-source venv/bin/activate
-pip install -r requirements.txt
+cat > ~/workshop-app/orders-api/app.py << 'EOF'
+from flask import Flask, jsonify
+import os, socket, requests
+
+app = Flask(__name__)
+
+SERVICE_NAME = "orders-api"
+VERSION = os.getenv("APP_VERSION", "1.0.0")
+CATALOG_URL = os.getenv("CATALOG_URL", "http://localhost:8080")
+
+ORDERS = [
+    {"order_id": "ORD-1001", "product_id": 1, "qty": 2, "status": "DELIVERED"},
+    {"order_id": "ORD-1002", "product_id": 3, "qty": 1, "status": "IN_TRANSIT"},
+    {"order_id": "ORD-1003", "product_id": 2, "qty": 1, "status": "PLACED"},
+]
+
+def meta():
+    return {
+        "service": SERVICE_NAME,
+        "version": VERSION,
+        "served_by": socket.gethostname(),
+        "catalog_url": CATALOG_URL,
+    }
+
+@app.route("/health")
+def health():
+    return jsonify(status="ok", **meta()), 200
+
+@app.route("/orders")
+def orders():
+    enriched = []
+    for o in ORDERS:
+        item = dict(o)
+        try:
+            r = requests.get(
+                f"{CATALOG_URL}/products/{o['product_id']}", timeout=2
+            )
+            if r.status_code == 200:
+                p = r.json()["product"]
+                item["product_name"] = p["name"]
+                item["unit_price"] = p["price"]
+                item["line_total"] = p["price"] * o["qty"]
+            else:
+                item["product_name"] = "UNKNOWN"
+        except Exception as e:
+            item["product_name"] = "CATALOG_UNAVAILABLE"
+            item["error"] = str(e.__class__.__name__)
+        enriched.append(item)
+    return jsonify(orders=enriched, **meta())
+
+if __name__ == "__main__":
+    app.run(host="0.0.0.0", port=8081)
+EOF
+```
+
+```bash
+cat > ~/workshop-app/orders-api/requirements.txt << 'EOF'
+flask==3.0.3
+gunicorn==22.0.0
+requests==2.32.3
+EOF
+```
+
+### Step 6 — Run both services
+
+**Terminal 1 — catalog-api on port 8080:**
+
+```bash
+cd ~/workshop-app/catalog-api
+python3 -m venv venv && source venv/bin/activate
+pip install -q -r requirements.txt
 python3 app.py
 ```
 
-On Windows PowerShell, activate with `venv\Scripts\Activate.ps1` instead.
+**Terminal 2 — orders-api on port 8081:**
 
-In a second terminal:
+```bash
+cd ~/workshop-app/orders-api
+python3 -m venv venv && source venv/bin/activate
+pip install -q -r requirements.txt
+python3 app.py
+```
+
+Windows PowerShell activates with `venv\Scripts\Activate.ps1`.
+
+### Step 7 — Test both services
+
+**Terminal 3:**
 
 ```bash
 curl -s localhost:8080/health
 curl -s localhost:8080/products
+curl -s localhost:8081/orders
 ```
 
-You should see the catalog come back, along with your own machine's hostname in the `served_by` field.
+The `/orders` response should show product names and line totals pulled live from `catalog-api`.
 
-Stop the application with `Ctrl+C` in the first terminal.
+### Step 8 — Watch the dependency break
 
-### Step 6 — Understand what just happened
-
-Look at what it took to get that response.
-
-You needed Python 3 installed at the right version. You needed `venv` available. You needed a working network connection to download two packages from PyPI. You needed port 8080 free. And the result runs on your machine and nowhere else.
-
-Now imagine handing `app.py` to a colleague and telling them to run it. They have Python 3.8. Or they are on Windows and the activation command is different. Or their corporate proxy blocks PyPI. Or port 8080 is taken by something else.
-
-That gap — between "it runs here" and "it runs anywhere" — is the entire subject of Module 01.
-
-### Step 7 — Clean up
+Stop `catalog-api` with `Ctrl+C` in Terminal 1, then call orders again:
 
 ```bash
-deactivate
-rm -rf ~/catalog-app/venv
-ls ~/catalog-app
+curl -s localhost:8081/orders
 ```
 
-Keep `app.py` and `requirements.txt`. Module 01 uses both, unchanged.
+Product names now read `CATALOG_UNAVAILABLE`. The orders service is still up, but degraded, because the service it depends on is gone.
+
+Restart `catalog-api` and confirm recovery:
+
+```bash
+curl -s localhost:8081/orders
+```
+
+Remember this behaviour. You will see it again in Module 03 when a target group goes unhealthy, and in Module 10 when a pod is deleted — except by then, something will be fixing it for you automatically.
+
+### Step 9 — Notice what this took
+
+To get two services talking on one machine, you needed the right Python version, two virtualenvs, three packages downloaded from the internet, two free ports, and three terminals.
+
+Now imagine doing that on a server you have never logged into, at 11 PM, over SSH, with a colleague reading the steps to you over a call.
+
+That is Module 02.
+
+### Step 10 — Clean up
+
+Stop both services with `Ctrl+C`, then:
+
+```bash
+deactivate 2>/dev/null
+rm -rf ~/workshop-app/catalog-api/venv ~/workshop-app/orders-api/venv
+ls -R ~/workshop-app
+```
+
+**Keep `~/workshop-app`.** Both `app.py` files and both `requirements.txt` files are used unchanged for the rest of the workshop. Nothing about the application code changes — only where and how it runs.
 
 ---
 
 ## Checklist before Module 01
 
 - [ ] All tools report a version
-- [ ] Docker daemon is running
 - [ ] `aws sts get-caller-identity` returns your account
-- [ ] AWS region is set and matches the instructor's
-- [ ] `app.py` and `requirements.txt` exist in `~/catalog-app`
-- [ ] You have seen `/products` return a response
+- [ ] Account ID noted down
+- [ ] Region set and matching the instructor's
+- [ ] Both services ran locally
+- [ ] `/orders` returned product names from `catalog-api`
+- [ ] You saw `CATALOG_UNAVAILABLE` when catalog was stopped
 
 ### If you are on an Apple Silicon Mac
 
-Read this now, not in Module 06.
+Read this now, not in Module 10.
 
-Docker on M-series Macs builds `arm64` images by default. EKS nodes in this workshop run `amd64`. An image built on your Mac will push to ECR successfully, deploy to Kubernetes successfully, and then crash-loop with an `exec format error` that gives you no useful clue about the cause.
+Docker on M-series Macs builds `arm64` images by default. The EKS nodes in this workshop run `amd64`. An `arm64` image will push to ECR successfully, deploy to Kubernetes successfully, and then crash-loop with `exec format error` and no useful clue as to why.
 
-You have two options. Either add `--platform linux/amd64` to every `docker build` from Module 01 onward, or run the entire workshop from a Linux EC2 instance. Choose now.
+Either add `--platform linux/amd64` to every `docker build` from Module 06 onward, or run the entire workshop from a Linux EC2 instance. Decide now.
 
 ---
 
-**Next:** [Module 01 — Docker Fundamentals](./01-docker-fundamentals.md)
+**Next:** [Module 01 — AWS Networking Recap](./01-aws-networking-recap.md)

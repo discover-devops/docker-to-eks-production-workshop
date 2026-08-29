@@ -79,3 +79,113 @@ PRIV_B=$(create_subnet 10.0.12.0/24 "$AZ_B" "${NAME}-private-1b")
 # Auto-assign public IPs in public subnets
 chmod +x ~/workshop-app/infra/create-network.shp-app/infra/network.env"$PRIV_B" --region "$REGION" >/dev/null
 JumpBoX $
+
+
+
+JumpBoX $
+JumpBoX $ ~/workshop-app/infra/create-network.sh
+>>> Region: ap-south-1
+>>> VPC: vpc-020f83f85cd4abbfe
+>>> IGW: igw-074000f93e5ac6cce
+>>> Public : subnet-0b058411eb0b25a13  subnet-06c36b43e137cd962
+>>> Private: subnet-00c1429551095b312 subnet-08d1b326f9d400039
+>>> NAT nat-0980074f39b7159c7 provisioning (this takes 1-2 minutes)...
+>>> NAT ready
+>>> Public RT : rtb-0482ee30ecde4ee5e  (0.0.0.0/0 -> IGW)
+>>> Private RT: rtb-09de8176f738740c2 (0.0.0.0/0 -> NAT)
+
+>>> Network ready. IDs saved to ~/workshop-app/infra/network.env
+JumpBoX $
+JumpBoX $
+JumpBoX $
+
+Create the security groups
+
+Launch the catalog-api instance (console)
+Launch the orders-api instance (console)
+
+order instance // i-01318aa76e8f28518 (orders-api)  // 16.113.94.179
+i-051ba6e090f95c5ba (catalog-api) // 18.61.101.181
+============================================
+
+
+
+cat > /opt/catalog-api/app.py << 'EOF'
+from flask import Flask, jsonify
+import os, socket
+
+app = Flask(__name__)
+
+SERVICE_NAME = "catalog-api"
+VERSION = os.getenv("APP_VERSION", "1.0.0")
+
+PRODUCTS = {
+    1: {"id": 1, "name": "Wireless Earbuds",    "price": 2499,  "stock": 120},
+    2: {"id": 2, "name": "Mechanical Keyboard", "price": 5999,  "stock": 34},
+    3: {"id": 3, "name": "27 inch Monitor",     "price": 18999, "stock": 12},
+    4: {"id": 4, "name": "USB-C Hub",           "price": 3499,  "stock": 87},
+}
+
+def meta():
+    return {
+        "service": SERVICE_NAME,
+        "version": VERSION,
+        "served_by": socket.gethostname(),
+    }
+
+@app.route("/health")
+def health():
+    return jsonify(status="ok", **meta()), 200
+
+@app.route("/products")
+def products():
+    return jsonify(products=list(PRODUCTS.values()), **meta())
+
+@app.route("/products/<int:pid>")
+def product(pid):
+    p = PRODUCTS.get(pid)
+    if not p:
+        return jsonify(error="not found", **meta()), 404
+    return jsonify(product=p, **meta())
+
+if __name__ == "__main__":
+    app.run(host="0.0.0.0", port=8080)
+EOF
+
+
+
+
+
+---------------------------
+
+cat > /etc/systemd/system/catalog-api.service << 'EOF'
+[Unit]
+Description=catalog-api
+After=network.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/catalog-api
+Environment="APP_VERSION=1.0.0"
+ExecStart=/opt/catalog-api/venv/bin/gunicorn --bind 0.0.0.0:8080 --workers 2 app:app
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+
+
+
+
+
+
+
+
+
+
+
+
+

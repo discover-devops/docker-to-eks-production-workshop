@@ -1,6 +1,6 @@
 # Module 05 — Docker Fundamentals
 
-**Duration:** 60 minutes
+
 **You will finish this module with:** a working mental model of what a container actually is, hands-on experience with images, layers, namespaces and cgroups, and a measured comparison against the numbers you wrote down in Module 04.
 
 ---
